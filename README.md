@@ -1,10 +1,10 @@
-# CognitiveInt × SocraticMind
+# 🧠 CognitiveInt × SocraticMind
 
 > *From answers to thinking — an AI system that maps, fixes, and evolves how students reason for real-world interviews.*
 
 ---
 
-##  The Problem
+## 🚨 The Problem
 
 If you’ve ever prepared for placements, you already know the loop:
 
@@ -24,11 +24,11 @@ Most tools evaluate answers.
 
 ---
 
-## What We Built
+## 💡 What We Built
 
 CognitiveInt × SocraticMind is a **dual-engine AI system** that continuously improves how a student thinks.
 
-###  Core Loop
+### 🔁 Core Loop
 
 ```
 Diagnose → Teach → Validate → Repeat
@@ -36,9 +36,9 @@ Diagnose → Teach → Validate → Repeat
 
 ---
 
-##  System Overview
+## ⚙️ System Overview
 
-###  CognitiveInt — *Interview Engine*
+### 🧪 CognitiveInt — *Interview Engine*
 
 Simulates a **real interviewer**, not a question bank.
 
@@ -63,7 +63,7 @@ Simulates a **real interviewer**, not a question bank.
 
 ---
 
-### SocraticMind — *Learning Engine*
+### 🧠 SocraticMind — *Learning Engine*
 
 Doesn't give answers. Forces understanding.
 
@@ -84,9 +84,9 @@ Doesn't give answers. Forces understanding.
 
 ---
 
-##  The Real Innovation
+## 🧬 The Real Innovation
 
-### Reasoning Fingerprint
+### 🔍 Reasoning Fingerprint
 
 A dynamic cognitive profile that evolves after every answer.
 
@@ -116,25 +116,22 @@ Teach → Adapt → Detect Understanding
 YES → Re-interview  
 NO  → Change strategy
 ```
----
 
----
 
 ## System Architecture
 
 <p align="center">
   <img src="./assets/cognitiveint_socraticmind_system_design.svg" width="900"/>
 </p>
-
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer       | Tech Used                   |
 | ----------- | --------------------------- |
 | Frontend    | React + Tailwind + Recharts |
 | Backend     | Flask (Python)              |
-| AI Agents   | Groq API                  |
+| AI Agents   | Claude API                  |
 | Voice       | Web Speech API (STT + TTS)  |
 | NLP         | DistilBERT (fine-tuned)     |
 | RL Layer    | Contextual Bandit           |
@@ -144,21 +141,21 @@ NO  → Change strategy
 
 ## 🎥 Demo
 
-- https://youtu.be/qjmvTvoc8v4
+👉 https://youtu.be/qjmvTvoc8v4
 
 (*Full walkthrough of the system loop*)
 
 ---
 
-## Who Is This For?
+## 🎯 Who Is This For?
 
-*  Engineering students preparing for placements
-*  Bootcamps & training institutes
-*  Placement platforms (B2B use case)
+* 🎓 Engineering students preparing for placements
+* 🏫 Bootcamps & training institutes
+* 💼 Placement platforms (B2B use case)
 
 ---
 
-## Why This Is Different
+## 🧩 Why This Is Different
 
 Most platforms:
 
@@ -180,7 +177,7 @@ We say:
 
 ---
 
-## Final Thought
+## 🚀 Final Thought
 
 This isn’t another mock interview platform.
 
