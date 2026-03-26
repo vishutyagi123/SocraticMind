@@ -1,0 +1,12 @@
+{
+  "name": "@socraticmind/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "dependencies": {
+    "pino": "^9.6.0",
+    "zod": "^3.24.0",
+    "amqplib": "^0.10.5",
+    "ioredis": "^5.4.0"
+  }
+}
