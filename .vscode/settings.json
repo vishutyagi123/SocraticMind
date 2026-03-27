@@ -1,0 +1,8 @@
+{
+    "python.analysis.extraPaths": [
+        "D:/Socratic_Mind"
+    ],
+    "python.defaultInterpreterPath": "D:/Socratic_Mind/venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.envFile": "${workspaceFolder}/.env"
+}
