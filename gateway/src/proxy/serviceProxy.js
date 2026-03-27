@@ -9,12 +9,13 @@ export function setupProxies(app, routes, authMiddleware) {
       middlewares.push(authMiddleware);
     }
 
-    // Proxy middleware
     const proxy = createProxyMiddleware({
       target,
       changeOrigin: true,
-      // Strip the /api prefix when forwarding to services
-      pathRewrite: (reqPath) => reqPath.replace(/^\/api/, ''),
+      pathFilter: path,
+      pathRewrite: {
+        '^/api': '' // strip /api, keep the rest (e.g. /auth/signup)
+      },
       on: {
         proxyReq: (proxyReq, req) => {
           // Forward user identity to downstream services
@@ -40,7 +41,20 @@ export function setupProxies(app, routes, authMiddleware) {
       },
     });
 
-    middlewares.push(proxy);
-    app.use(path, ...middlewares);
+    if (auth) {
+      app.use(path, authMiddleware);
+    } else if (path === '/api/auth') {
+      // Selective auth for the auth service
+      app.use(path, (req, res, next) => {
+        const publicRoutes = ['/signup', '/login', '/refresh', '/google'];
+        const isPublic = publicRoutes.some(r => req.path.startsWith(r));
+        if (isPublic) {
+          return next();
+        }
+        return authMiddleware(req, res, next);
+      });
+    }
+
+    app.use(proxy);
   });
 }

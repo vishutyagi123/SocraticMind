@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../../context/AuthContext';
 
-export default function Navbar() {
+export default function Navbar({ onOpenAuth }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, login } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -14,11 +13,6 @@ export default function Navbar() {
     window.addEventListener('scroll', handler);
     return () => window.removeEventListener('scroll', handler);
   }, []);
-
-  const handleSuccess = (cred) => {
-    login(cred);
-    navigate('/dashboard');
-  };
 
   return (
     <nav
@@ -59,14 +53,12 @@ export default function Navbar() {
             </button>
           ) : (
             <div className="hidden md:block">
-              <GoogleLogin
-                onSuccess={handleSuccess}
-                onError={() => console.log('Login failed')}
-                theme="filled_black"
-                shape="pill"
-                size="medium"
-                text="signin_with"
-              />
+              <button
+                onClick={onOpenAuth}
+                className="px-5 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20 text-sm font-medium rounded-lg transition-all duration-200"
+              >
+                Sign In
+              </button>
             </div>
           )}
 
@@ -101,13 +93,15 @@ export default function Navbar() {
           <a href="https://youtu.be/qjmvTvoc8v4" target="_blank" rel="noreferrer" className="block text-sm text-text-muted hover:text-text-primary transition-colors">Demo</a>
           {!user && (
             <div className="pt-2">
-              <GoogleLogin
-                onSuccess={handleSuccess}
-                onError={() => console.log('Login failed')}
-                theme="filled_black"
-                shape="pill"
-                size="medium"
-              />
+              <button
+                onClick={() => {
+                  onOpenAuth();
+                  setMobileOpen(false);
+                }}
+                className="w-full px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20 text-sm font-medium rounded-lg transition-all duration-200"
+              >
+                Sign In
+              </button>
             </div>
           )}
         </div>

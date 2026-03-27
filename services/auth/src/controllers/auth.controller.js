@@ -1,5 +1,6 @@
 import argon2 from 'argon2';
 import crypto from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { User } from '../models/user.model.js';
 import { RefreshToken } from '../models/refreshToken.model.js';
 import {
@@ -8,6 +9,8 @@ import {
   setAuthCookies,
   clearAuthCookies,
 } from '../services/token.service.js';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /**
  * Generate a device fingerprint from request info
@@ -89,6 +92,47 @@ export async function login(req, res, next) {
 
     res.json({
       message: 'Login successful',
+      user: User.sanitize(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /auth/google
+ */
+export async function googleLogin(req, res, next) {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'No token provided', code: 'NO_TOKEN' });
+
+    // Verify the Google ID Token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const { email, name, picture } = ticket.getPayload();
+    if (!email) {
+      return res.status(400).json({ error: 'Google account has no email', code: 'NO_EMAIL' });
+    }
+
+    // Find or Create user natively in the auth database
+    let user = await User.findByEmail(email);
+    if (!user) {
+      user = await User.create({ email, name, avatarUrl: picture, passwordHash: null });
+    }
+
+    // Issue tokens
+    const deviceId = getDeviceId(req);
+    const deviceInfo = getDeviceInfo(req);
+    const { accessToken, refreshToken } = await issueTokenPair(user, deviceId, deviceInfo);
+
+    setAuthCookies(res, accessToken, refreshToken);
+
+    res.json({
+      message: 'Google login successful',
       user: User.sanitize(user),
     });
   } catch (err) {
