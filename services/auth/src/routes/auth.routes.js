@@ -9,6 +9,7 @@ import {
   updateMe,
   getDevices,
   revokeDevice,
+  googleLogin,
 } from '../controllers/auth.controller.js';
 import { validate, signupSchema, loginSchema, updateProfileSchema } from '../middleware/validate.js';
 
@@ -17,6 +18,7 @@ const router = Router();
 // Public routes
 router.post('/signup', validate(signupSchema), signup);
 router.post('/login', validate(loginSchema), login);
+router.post('/google', googleLogin);
 router.post('/refresh', refresh);
 
 // Protected routes (JWT validated by gateway, user ID in X-User-ID header)

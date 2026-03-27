@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../../context/AuthContext';
 
 const AXES = [
@@ -11,17 +10,10 @@ const AXES = [
   'Surface Knowledge',
 ];
 
-export default function HeroSection() {
+export default function HeroSection({ onOpenAuth }) {
   const canvasRef = useRef(null);
   const navigate = useNavigate();
-  const { user, login } = useAuth();
-
-  const handleCTA = (cred) => {
-    if (cred) {
-      login(cred);
-      navigate('/dashboard');
-    }
-  };
+  const { user } = useAuth();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -202,16 +194,13 @@ export default function HeroSection() {
               </button>
             ) : (
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                <GoogleLogin
-                  onSuccess={handleCTA}
-                  onError={() => console.log('Login failed')}
-                  theme="filled_black"
-                  shape="pill"
-                  size="large"
-                  text="continue_with"
-                  width="240"
-                />
-                <span className="text-text-dim text-sm">to start a free interview</span>
+                <button
+                  onClick={() => onOpenAuth('signup')}
+                  className="px-8 py-3.5 bg-white text-black font-semibold rounded-xl transition-all duration-200 hover:scale-105"
+                >
+                  Get Started Free
+                </button>
+                <span className="text-text-dim text-sm">No credit card required</span>
               </div>
             )}
             <a

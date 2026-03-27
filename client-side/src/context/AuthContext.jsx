@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 
 const AuthContext = createContext({});
@@ -55,8 +56,29 @@ export function AuthProvider({ children }) {
     });
     
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || 'Login failed');
+      const errorData = await res.json();
+      let errorMessage = errorData.error || 'Login failed';
+      if (errorData.details && errorData.details.length > 0) {
+        errorMessage = errorData.details.map(d => d.message).join(', ');
+      }
+      throw new Error(errorMessage);
+    }
+    
+    const data = await res.json();
+    setUser(data.user);
+  };
+
+  const googleLogin = async (credential) => {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: credential }),
+      credentials: 'include'
+    });
+    
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Google login failed');
     }
     
     const data = await res.json();
@@ -72,8 +94,12 @@ export function AuthProvider({ children }) {
     });
     
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || 'Signup failed');
+      const errorData = await res.json();
+      let errorMessage = errorData.error || 'Signup failed';
+      if (errorData.details && errorData.details.length > 0) {
+        errorMessage = errorData.details.map(d => d.message).join(', ');
+      }
+      throw new Error(errorMessage);
     }
     
     const data = await res.json();
@@ -89,10 +115,28 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, checkAuth }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, googleLogin, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+export function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
