@@ -36,7 +36,7 @@ async def call_llm(
                 f.write(f"\n--- Calling LLM ---\n")
                 f.write(f"Payload: {json.dumps(payload, indent=2)}\n")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=12.0) as client:
             response = await client.post(GROQ_API_URL, headers=headers, json=payload)
             
             if debug_log:
@@ -76,4 +76,5 @@ async def call_llm(
         if debug_log:
             with open(log_file, "a") as f:
                 f.write(f"EXCEPTION: {str(e)}\n")
-        raise e
+        # Fail-soft to keep interview flow responsive.
+        return {}

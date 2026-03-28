@@ -65,12 +65,6 @@ const KW = {
   11:["layer","physical","transport","application","abstraction","protocol","encapsulation"],
 };
 
-const FEEDBACK_MAP = [
-  { deep:"Solid reasoning — you traced both the mechanism and the cost. That is rare.", medium:"You got the surface right. But the WHY is still thin — what is the actual mechanism?", shallow:"You named the concept but stopped there. A good answer explains WHY it works, not just WHAT it is." },
-  { deep:"Excellent — you answered not just what, but when and why. That is systems thinking.", medium:"You have the right intuition. Now ask yourself — what is the performance cost you are trading?", shallow:"This answer works at a surface level. But what happens to your reasoning when scale changes?" },
-  { deep:"This shows real causal understanding. You connected mechanism to consequence.", medium:"Good start. The missing piece: why does this specific approach solve that specific problem?", shallow:"This is definition-level. The interviewer wants to see if you can reason, not recite." },
-];
-
 const SOC_FLOW = [
   "Good — I can see from your interview what we need to work on. Let me ask you something simple to start.\n\nYou have this array: 3, 7, 1, 9, 4, 2. I ask you to find if the number 9 exists. How many steps does your approach take — in the worst case?",
   "Good. Now if the array had one million elements instead of six, and the element does not exist — how many steps? Don't give me a number. Give me a formula in terms of N.",
@@ -122,11 +116,52 @@ function analyseAnswer(ans, qIdx) {
   const conf  = len > 60 ? Math.round(52 + Math.random() * 32) : Math.round(18 + Math.random() * 22);
   const cons  = Math.round(40 + ratio * 40 + Math.random() * 12);
   const orig  = len > 200 ? Math.round(55 + Math.random() * 28) : Math.round(20 + Math.random() * 30);
-  return { depth, acc, conf, cons, orig };
+  const fluency = Math.max(
+    18,
+    Math.min(
+      95,
+      Math.round((len > 120 ? 40 : 20) + ratio * 45 + (/\b(um|uh|like)\b/gi.test(ans) ? -10 : 8)),
+    ),
+  );
+  return { depth, acc, conf, cons, orig, fluency };
+}
+
+function buildConciseFeedback(scores, questionText) {
+  const strengths = [];
+  const weakAreas = [];
+  if (scores.acc >= 65) strengths.push("accuracy");
+  if (scores.depth >= 60) strengths.push("reasoning depth");
+  if (scores.conf >= 60) strengths.push("confidence");
+  if (scores.fluency >= 60) strengths.push("fluency");
+  if (scores.acc < 55) weakAreas.push("concept accuracy");
+  if (scores.depth < 50) weakAreas.push("depth of explanation");
+  if (scores.conf < 45) weakAreas.push("confidence under pressure");
+  if (scores.fluency < 50) weakAreas.push("delivery fluency");
+
+  const concise =
+    scores.acc >= 65 && scores.depth >= 60
+      ? "Strong and structured response with good conceptual clarity."
+      : scores.acc >= 50
+        ? "Partially correct answer; improve depth and precision."
+        : "Core concepts need reinforcement before progressing to advanced questions.";
+
+  return {
+    question: questionText,
+    concise_feedback: concise,
+    strengths: strengths.length ? strengths : ["attempted reasoning"],
+    weak_areas: weakAreas.length ? weakAreas : ["minor edge-case handling"],
+    metrics: {
+      confidence: scores.conf,
+      accuracy: scores.acc,
+      depth: scores.depth,
+      fluency: scores.fluency,
+      consistency: scores.cons,
+      originality: scores.orig,
+    },
+  };
 }
 
 function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function callApi(method, path, body, isFormData = false) {
   try {
@@ -178,7 +213,7 @@ function useVoice() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { onError?.("not-supported"); return false; }
     const r = new SpeechRecognition();
-    r.continuous = false; r.interimResults = true; r.lang = "en-IN";
+    r.continuous = true; r.interimResults = true; r.lang = navigator.language || "en-US";
     recogRef.current = r;
     isListeningRef.current = true;
     let accumulated = "";
@@ -191,7 +226,10 @@ function useVoice() {
       if (final) { accumulated += " " + final; onFinal?.(accumulated.trim()); }
       else onInterim?.(accumulated + " " + interim + "...");
     };
-    r.onend = () => { isListeningRef.current = false; onFinal?.(accumulated.trim()); };
+    r.onend = () => {
+      isListeningRef.current = false;
+      if (accumulated.trim()) onFinal?.(accumulated.trim());
+    };
     r.onerror = (e) => { isListeningRef.current = false; onError?.(e.error); };
     r.start();
     return true;
@@ -263,6 +301,7 @@ function SetupScreen({ onStart }) {
   const [jdFromJD, setJdFromJD] = useState(null);
   const [numQuestions, setNumQuestions] = useState(10);
   const [scenarioMode, setScenarioMode] = useState("both");
+  const [uploadNote, setUploadNote] = useState("");
 
   const parseJD = (text) => {
     setJdText(text);
@@ -275,16 +314,22 @@ function SetupScreen({ onStart }) {
   const handlePDF = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = new TextDecoder().decode(ev.target.result).replace(/[^\x20-\x7E\n]/g," ");
-      parseJD(text.slice(0,3000));
-      setTab("paste");
-    };
-    reader.readAsArrayBuffer(file);
+    setUploadNote("Parsing PDF...");
+    const form = new FormData();
+    form.append("file", file);
+
+    callApi("post", "/jd/extract", form, true).then((resp) => {
+      if (resp?.text) {
+        parseJD(resp.text.slice(0, 5000));
+        setTab("paste");
+        setUploadNote(`PDF uploaded (${Math.min(resp.char_count || 0, 5000)} chars extracted). You can now start.`);
+        return;
+      }
+      setUploadNote("Could not parse this PDF. Try pasting JD text directly.");
+    });
   };
 
-  const canStart = selectedTopic || (parsedTopics.length > 0);
+  const canStart = Boolean(selectedTopic || parsedTopics.length > 0 || jdText.trim().length >= 40);
 
   const handleStart = () => {
     const topic = selectedTopic || parsedTopics[0];
@@ -323,7 +368,7 @@ function SetupScreen({ onStart }) {
           <div onClick={() => document.getElementById("pdf-input").click()} style={{ width:"100%",minHeight:100,border:"1.5px dashed var(--border2)",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",padding:20,transition:"all .2s" }} onMouseOver={e => { e.currentTarget.style.borderColor="var(--accent)"; e.currentTarget.style.background="rgba(124,111,247,.04)"; }} onMouseOut={e => { e.currentTarget.style.borderColor="var(--border2)"; e.currentTarget.style.background="transparent"; }}>
             <div style={{ fontSize:24 }}>📄</div>
             <div style={{ fontSize:13,color:"var(--muted)" }}>Click to upload JD PDF</div>
-            <div style={{ fontSize:11,color:"var(--muted)",opacity:.6 }}>PDF parsing runs in-browser — no upload to server</div>
+            <div style={{ fontSize:11,color:"var(--muted)",opacity:.6 }}>PDF parsing uses backend extractor for better reliability</div>
             <input id="pdf-input" type="file" accept=".pdf" style={{ display:"none" }} onChange={handlePDF}/>
           </div>
         )}
@@ -344,6 +389,11 @@ function SetupScreen({ onStart }) {
           <div style={{ marginTop:12,padding:"10px 14px",borderRadius:8,background:"rgba(52,211,153,.07)",border:"1px solid rgba(52,211,153,.2)",fontSize:12,color:"var(--green)",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.6 }}>
             ✓ Extracted {parsedTopics.length} topics: {parsedTopics.join(" · ")}<br/>
             Primary topic for interview: <strong>{parsedTopics[0]}</strong>
+          </div>
+        )}
+        {uploadNote && (
+          <div style={{ marginTop:10,padding:"8px 12px",borderRadius:8,background:"rgba(45,212,191,.07)",border:"1px solid rgba(45,212,191,.2)",fontSize:12,color:"var(--teal)" }}>
+            {uploadNote}
           </div>
         )}
 
@@ -374,18 +424,19 @@ function SetupScreen({ onStart }) {
 }
 
 // ── SCREEN 1: INTERVIEW ──
-function InterviewScreen({ state, onAnswer, onEnd, voice }) {
+function InterviewScreen({ state, onAnswer, voice }) {
   const [answer, setAnswer] = useState("");
+  const [liveTranscript, setLiveTranscript] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Click mic to answer by voice");
   const [speaking, setSpeaking] = useState(false);
-  const [analysisBox, setAnalysisBox] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const topic = state.topic;
   const questions = IVD[topic]?.qs || [];
-  const question = questions[state.questionIndex] || { text: "Loading...", topic:"—" };
-  const total = questions.length;
+  const fallbackQuestion = questions[state.questionIndex] || { text: "Loading...", topic:"—" };
+  const question = state.currentQuestion ? { ...fallbackQuestion, text: state.currentQuestion } : fallbackQuestion;
+  const total = state.totalQuestions || questions.length;
 
   // Speak the question when it changes
   useEffect(() => {
@@ -401,8 +452,18 @@ function InterviewScreen({ state, onAnswer, onEnd, voice }) {
   const toggleMic = () => {
     if (listening) { voice.stopListening(); setListening(false); setVoiceStatus("Done — review and submit"); return; }
     const started = voice.startListening(
-      (interim) => setAnswer(interim),
-      (final) => { setAnswer(final); setListening(false); setVoiceStatus("Done — review and submit"); },
+      (interim) => {
+        setLiveTranscript(interim);
+        setVoiceStatus("● Listening... live transcript updating");
+      },
+      (final) => {
+        setLiveTranscript(final);
+        if (final?.trim()) {
+          setAnswer(prev => (prev ? `${prev} ${final}`.trim() : final.trim()));
+        }
+        setListening(false);
+        setVoiceStatus("Done — review and submit");
+      },
       (err) => { setListening(false); setVoiceStatus(err === "not-allowed" ? "Mic blocked — allow access" : "Voice error — try typing"); }
     );
     if (started) { setListening(true); setVoiceStatus("● Listening..."); }
@@ -420,16 +481,11 @@ function InterviewScreen({ state, onAnswer, onEnd, voice }) {
       apiResult = await callApi("post", "/answer", { session_id: state.sessionId, answer });
     }
 
-    const fb = FEEDBACK_MAP[state.questionIndex % FEEDBACK_MAP.length];
-    const feedbackText = scores.depth > 60 ? fb.deep : scores.depth > 35 ? fb.medium : fb.shallow;
-    setAnalysisBox({ feedbackText, scores });
-    voice.speak(feedbackText);
+    const feedback = buildConciseFeedback(scores, question.text);
     setAnswer("");
+    setLiveTranscript("");
     setSubmitting(false);
-
-    await sleep(2000);
-    onAnswer(scores, apiResult);
-    setAnalysisBox(null);
+    onAnswer(scores, apiResult, feedback);
   };
 
   const jdTopics = state.jdTopics;
@@ -463,6 +519,9 @@ function InterviewScreen({ state, onAnswer, onEnd, voice }) {
           </div>
           <div style={{ borderTop:"1px solid var(--border)",paddingTop:12 }}>
             <textarea value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Speak using the mic above — or type your answer here..." rows={3} style={{ width:"100%",background:"transparent",border:"none",color:"var(--text)",fontFamily:"'Space Grotesk',sans-serif",fontSize:14,outline:"none",resize:"none",lineHeight:1.6,minHeight:50 }}/>
+            <div style={{ marginTop:8,padding:"8px 10px",borderRadius:8,background:"var(--bg3)",fontSize:11,color:"var(--muted)",fontFamily:"'JetBrains Mono',monospace",minHeight:28 }}>
+              Live transcript: {liveTranscript || "waiting for speech..."}
+            </div>
           </div>
         </div>
 
@@ -475,17 +534,9 @@ function InterviewScreen({ state, onAnswer, onEnd, voice }) {
           </button>
         </div>
 
-        {analysisBox && (
-          <div style={{ background:"var(--bg3)",border:"1px solid var(--border2)",borderRadius:10,padding:15,fontSize:13,lineHeight:1.7,animation:"fadeIn .3s ease" }}>
-            <div style={{ fontSize:10,color:"var(--accent2)",fontFamily:"'JetBrains Mono',monospace",marginBottom:7,textTransform:"uppercase",letterSpacing:.8 }}>▸ Agent Pipeline Analysis</div>
-            <div style={{ color:"var(--text)",marginBottom:10 }}>{analysisBox.feedbackText}</div>
-            <div style={{ paddingTop:9,borderTop:"1px solid var(--border)",display:"flex",gap:14,flexWrap:"wrap" }}>
-              <span style={{ fontSize:10,fontFamily:"'JetBrains Mono',monospace",color: analysisBox.scores.depth>60 ? "var(--green)" : "var(--amber)" }}>depth: {analysisBox.scores.depth}%</span>
-              <span style={{ fontSize:10,fontFamily:"'JetBrains Mono',monospace",color: analysisBox.scores.acc>60 ? "var(--green)" : "var(--red)" }}>accuracy: {analysisBox.scores.acc}%</span>
-              <span style={{ fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:"var(--muted)" }}>pattern: {state.pattern}</span>
-            </div>
-          </div>
-        )}
+        <div style={{ background:"rgba(124,111,247,.06)",border:"1px solid rgba(124,111,247,.2)",borderRadius:10,padding:12,fontSize:12,color:"var(--accent2)" }}>
+          Per-question feedback is being collected silently and will be shown in the final report.
+        </div>
       </div>
 
       {/* RIGHT PANEL */}
@@ -528,6 +579,17 @@ function InterviewScreen({ state, onAnswer, onEnd, voice }) {
 // ── SCREEN 2: TRANSITION ──
 function TransitionScreen({ state, onEnterSocratic }) {
   const gaps = state.weakSpots.slice(0, 3);
+  const [countdown, setCountdown] = useState(4);
+
+  useEffect(() => {
+    if (countdown <= 0) {
+      onEnterSocratic();
+      return;
+    }
+    const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, onEnterSocratic]);
+
   return (
     <div style={{ display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 20px",minHeight:"calc(100vh - 54px)",position:"relative",overflow:"hidden" }}>
       <div style={{ position:"absolute",width:700,height:700,borderRadius:"50%",background:"radial-gradient(circle,rgba(124,111,247,.07) 0%,transparent 70%)",top:"50%",left:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none" }}/>
@@ -544,7 +606,7 @@ function TransitionScreen({ state, onEnterSocratic }) {
           ))}
         </div>
         <button onClick={onEnterSocratic} style={{ padding:"13px 36px",borderRadius:9,border:"none",background:"var(--accent)",color:"#fff",fontFamily:"'Space Grotesk',sans-serif",fontSize:14,fontWeight:600,cursor:"pointer",transition:"all .2s",width:"100%" }}>
-          Enter Learning Mode →
+          Enter Learning Mode {countdown > 0 ? `(${countdown})` : ""} →
         </button>
       </div>
     </div>
@@ -564,6 +626,8 @@ function SocraticScreen({ state, onViewReport, voice }) {
   const [listening, setListening] = useState(false);
   const chatEndRef = useRef(null);
   const initDone = useRef(false);
+  const [mentorTopic, setMentorTopic] = useState("");
+  const [mentorTopics, setMentorTopics] = useState([]);
 
   const addAiMsg = useCallback((text, isTyping = true) => {
     if (isTyping) {
@@ -580,17 +644,29 @@ function SocraticScreen({ state, onViewReport, voice }) {
   useEffect(() => {
     if (initDone.current) return;
     initDone.current = true;
-    setTimeout(() => {
-      addAiMsg(SOC_FLOW[0]);
-      voice.speak(SOC_FLOW[0]);
-    }, 500);
+    (async () => {
+      if (state.sessionId) {
+        const mentorStart = await callApi("post", "/mentor/start", { session_id: state.sessionId });
+        if (mentorStart && !mentorStart.error && mentorStart.question) {
+          setMentorTopic(mentorStart.current_topic || "");
+          setMentorTopics(mentorStart.topics || []);
+          addAiMsg(mentorStart.question, false);
+          voice.speak(mentorStart.question);
+          return;
+        }
+      }
+      setTimeout(() => {
+        addAiMsg(SOC_FLOW[0]);
+        voice.speak(SOC_FLOW[0]);
+      }, 500);
+    })();
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior:"smooth" });
   }, [messages]);
 
-  const sendChat = () => {
+  const sendChat = async () => {
     const text = inputText.trim();
     if (!text) return;
     setInputText("");
@@ -613,11 +689,24 @@ function SocraticScreen({ state, onViewReport, voice }) {
     const nextIdx = Math.min(step + 1, SOC_FLOW.length-1);
     setChatStep(nextIdx);
 
+    if (state.sessionId && mentorTopic) {
+      const mentorResult = await callApi("post", "/mentor/answer", {
+        session_id: state.sessionId,
+        topic: mentorTopic,
+        answer: text,
+      });
+      if (mentorResult && !mentorResult.error && mentorResult.question) {
+        addAiMsg(mentorResult.question);
+        voice.speak(mentorResult.question);
+        return;
+      }
+    }
+
     setTimeout(() => {
       const response = SOC_FLOW[nextIdx];
       addAiMsg(response);
       voice.speak(response);
-    }, 900);
+    }, 500);
   };
 
   const toggleSocMic = () => {
@@ -699,7 +788,12 @@ function SocraticScreen({ state, onViewReport, voice }) {
           </div>
         </div>
         <div style={{ height:1,background:"var(--border)" }}/>
-        <button onClick={() => onViewReport(rewardTotal, masteryPct, hintCount, STRATEGIES[stratIdx])} style={{ width:"100%",fontSize:12,padding:"11px 22px",borderRadius:8,border:"1px solid var(--border2)",background:"transparent",color:"var(--text)",fontFamily:"'Space Grotesk',sans-serif",fontWeight:500,cursor:"pointer",transition:"all .2s" }}>
+        {mentorTopics.length > 0 && (
+          <div style={{ fontSize:10,color:"var(--muted)",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5 }}>
+            Mentor topics: {mentorTopics.slice(0, 3).join(" • ")}
+          </div>
+        )}
+        <button onClick={() => onViewReport(rewardTotal, masteryPct, hintCount, STRATEGIES[stratIdx], messages)} style={{ width:"100%",fontSize:12,padding:"11px 22px",borderRadius:8,border:"1px solid var(--border2)",background:"transparent",color:"var(--text)",fontFamily:"'Space Grotesk',sans-serif",fontWeight:500,cursor:"pointer",transition:"all .2s" }}>
           View Final Report →
         </button>
       </div>
@@ -709,7 +803,7 @@ function SocraticScreen({ state, onViewReport, voice }) {
 
 // ── SCREEN 4: REPORT ──
 function ReportScreen({ state, socStats, onRestart }) {
-  const { rewardTotal, masteryPct, hintCount, strategyUsed } = socStats;
+  const { rewardTotal, masteryPct, hintCount, strategyUsed, mentorMessages } = socStats;
   const patDescriptions = {
     "Overconfident":"You answer with high confidence but accuracy lags behind. Focus on verifying your intuitions before committing.",
     "Surface Knower":"You know the names and definitions but struggle to explain the why. Dig one level deeper — always ask yourself: what is the mechanism?",
@@ -784,6 +878,38 @@ function ReportScreen({ state, socStats, onRestart }) {
         </div>
       </div>
 
+      <div style={{ background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:12,padding:18,marginBottom:16 }}>
+        <div style={{ fontSize:10,color:"var(--muted)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",marginBottom:12 }}>
+          Per-Question Feedback Summary
+        </div>
+        <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+          {(state.questionFeedbacks || []).map((item, idx) => (
+            <div key={`${item.question}-${idx}`} style={{ border:"1px solid var(--border2)",borderRadius:10,padding:12,background:"var(--bg3)" }}>
+              <div style={{ fontSize:12,fontWeight:600,marginBottom:6 }}>Q{idx + 1}. {item.question}</div>
+              <div style={{ fontSize:12,color:"var(--muted)",marginBottom:8 }}>{item.concise_feedback}</div>
+              <div style={{ fontSize:11,color:"var(--text)" }}>
+                Confidence: <b>{item.metrics.confidence}%</b> · Accuracy: <b>{item.metrics.accuracy}%</b> · Fluency: <b>{item.metrics.fluency}%</b> · Weak areas: <b>{item.weak_areas.join(", ")}</b>
+              </div>
+            </div>
+          ))}
+          {(!state.questionFeedbacks || state.questionFeedbacks.length === 0) && (
+            <div style={{ fontSize:12,color:"var(--muted)" }}>No per-question feedback captured.</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:12,padding:18,marginBottom:18 }}>
+        <div style={{ fontSize:10,color:"var(--muted)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,textTransform:"uppercase",marginBottom:12 }}>
+          Socratic Mentor Feedback
+        </div>
+        <div style={{ fontSize:12,color:"var(--muted)",lineHeight:1.7 }}>
+          {mentorMessages?.filter(m => m.type === "ai").slice(-4).map((m, i) => (
+            <div key={i} style={{ marginBottom:8 }}>• {m.text}</div>
+          ))}
+          {!mentorMessages?.length && "Mentor feedback not available for this run."}
+        </div>
+      </div>
+
       <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
         <button onClick={onRestart} style={{ padding:"11px 22px",borderRadius:8,border:"none",background:"var(--accent)",color:"#fff",fontFamily:"'Space Grotesk',sans-serif",fontSize:13,fontWeight:600,cursor:"pointer" }}>
           Start New Interview →
@@ -812,11 +938,14 @@ const INITIAL_STATE = {
   jdFromJD: null,
   numQuestions: 10,
   scenarioMode: "both",
+  questionFeedbacks: [],
+  currentQuestion: "",
+  totalQuestions: 3,
 };
 
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE);
-  const [socStats, setSocStats] = useState({ rewardTotal:0, masteryPct:5, hintCount:0, strategyUsed:"counter_example" });
+  const [socStats, setSocStats] = useState({ rewardTotal:0, masteryPct:5, hintCount:0, strategyUsed:"counter_example", mentorMessages:[] });
   const voice = useVoice();
 
   // Inject CSS
@@ -830,19 +959,28 @@ export default function App() {
   }, []);
 
   const handleStart = async ({ topic, jdText, jdFromJD, numQuestions, scenarioMode }) => {
-    const topicData = IVD[topic] || IVD["Data Structures"];
+    const fallbackTopic = topic || "Data Structures";
+    const topicData = IVD[fallbackTopic] || IVD["Data Structures"];
     const jdTopics = (jdFromJD || topicData.jd).map(name => ({ name, status:"pending" }));
 
     // Try real API
     let sessionId = null;
-    const apiData = await callApi("post", "/start", { domain: topic, jd_text: jdText, num_questions: numQuestions, scenario_mode: scenarioMode });
+    const hasJdText = Boolean(jdText?.trim());
+    const apiData = await callApi("post", "/start", {
+      domain: hasJdText ? "" : fallbackTopic,
+      jd_text: hasJdText ? jdText : "",
+      num_questions: numQuestions,
+      scenario_mode: scenarioMode,
+    });
     if (apiData && !apiData.error) sessionId = apiData.session_id;
+    const firstQuestion = apiData?.question || (topicData.qs?.[0]?.text ?? "");
+    const totalQuestions = apiData?.max_questions || topicData.qs?.length || numQuestions;
 
     setState(prev => ({
       ...prev,
       screen: "interview",
       phase: 1,
-      topic,
+      topic: fallbackTopic,
       sessionId,
       questionIndex: 0,
       fp: { depth:0, acc:0, conf:0, cons:0, orig:0 },
@@ -852,10 +990,13 @@ export default function App() {
       jdFromJD,
       numQuestions,
       scenarioMode,
+      questionFeedbacks: [],
+      currentQuestion: firstQuestion,
+      totalQuestions,
     }));
   };
 
-  const handleAnswer = (scores, apiResult) => {
+  const handleAnswer = (scores, apiResult, feedback) => {
     setState(prev => {
       const newFp = {
         depth: lerp(prev.fp.depth, scores.depth, 0.6),
@@ -870,27 +1011,47 @@ export default function App() {
       const newJdTopics = prev.jdTopics.map((t,i) => i === ti ? { ...t, status: scores.acc > 55 ? "covered" : "gap" } : t);
       const weakSpots = newJdTopics.filter(t => t.status !== "covered").map(t => t.name);
       const nextIndex = prev.questionIndex + 1;
-      const maxQ = IVD[prev.topic]?.qs.length || 3;
+      const maxQ = prev.totalQuestions || IVD[prev.topic]?.qs.length || 3;
+      const apiCompleted = Boolean(apiResult?.completed);
+      const nextQuestion = apiResult?.next_question || prev.currentQuestion;
 
-      if (nextIndex >= maxQ) {
+      if (apiCompleted || nextIndex >= maxQ) {
         const finalGaps = newJdTopics.filter(t => t.status !== "covered").map(t => t.name);
-        return { ...prev, fp: newFp, pattern, jdTopics: newJdTopics, weakSpots: finalGaps.length > 0 ? finalGaps : [newJdTopics[0]?.name || "Fundamentals"], screen:"transition", phase:2 };
+        return {
+          ...prev,
+          fp: newFp,
+          pattern,
+          jdTopics: newJdTopics,
+          weakSpots: finalGaps.length > 0 ? finalGaps : [newJdTopics[0]?.name || "Fundamentals"],
+          screen:"transition",
+          phase:2,
+          questionFeedbacks: [...prev.questionFeedbacks, feedback],
+        };
       }
-      return { ...prev, fp: newFp, pattern, jdTopics: newJdTopics, weakSpots, questionIndex: nextIndex };
+      return {
+        ...prev,
+        fp: newFp,
+        pattern,
+        jdTopics: newJdTopics,
+        weakSpots,
+        questionIndex: nextIndex,
+        questionFeedbacks: [...prev.questionFeedbacks, feedback],
+        currentQuestion: nextQuestion,
+      };
     });
   };
 
   const handleEnterSocratic = () => setState(prev => ({ ...prev, screen:"socratic", phase:3 }));
 
-  const handleViewReport = (rewardTotal, masteryPct, hintCount, strategyUsed) => {
-    setSocStats({ rewardTotal, masteryPct, hintCount, strategyUsed });
+  const handleViewReport = (rewardTotal, masteryPct, hintCount, strategyUsed, mentorMessages = []) => {
+    setSocStats({ rewardTotal, masteryPct, hintCount, strategyUsed, mentorMessages });
     setState(prev => ({ ...prev, screen:"report", phase:4 }));
   };
 
   const handleRestart = () => {
     voice.stopSpeaking();
     setState(INITIAL_STATE);
-    setSocStats({ rewardTotal:0, masteryPct:5, hintCount:0, strategyUsed:"counter_example" });
+    setSocStats({ rewardTotal:0, masteryPct:5, hintCount:0, strategyUsed:"counter_example", mentorMessages:[] });
   };
 
   return (

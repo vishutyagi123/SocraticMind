@@ -4,10 +4,9 @@ from agents.question_generator import generate_question
 from agents.evaluation_agent import evaluate
 from agents.reasoning_profiler import profile
 from agents.adaptive_controller import adjust
-from agents.socratic_mentor import guide, mentor_question
+from agents.socratic_mentor import mentor_question
 from memory.session_store import store
 
-import asyncio
 import uuid
 
 
@@ -95,26 +94,16 @@ async def process_answer(session_id: str, answer: str) -> dict:
     store.update(session_id, "fingerprint", fingerprint)
     store.append_fingerprint(session_id, fingerprint)
 
-    # Then run mentorship + difficulty adjustment concurrently.
-    guide_task = guide(
-        current_question,
-        answer,
-        evaluation,
-        reasoning_fingerprint=fingerprint,
-    )
-    adjust_task = adjust(
+    # Difficulty update (keep this lightweight to reduce answer latency).
+    difficulty_data = await adjust(
         fingerprint,
         evaluation,
         current_difficulty=session.get("difficulty", "medium"),
     )
 
-    guidance_data, difficulty_data = await asyncio.gather(guide_task, adjust_task)
-
     new_difficulty = difficulty_data.get("next_difficulty", session["difficulty"])
     store.update(session_id, "difficulty", new_difficulty)
     store.append_difficulty(session_id, new_difficulty)
-
-    # guidance_data already computed
 
     score = {"correct": 100, "partially_correct": 60, "incorrect": 20}.get(
         evaluation.get("correctness", ""), 50
@@ -147,7 +136,7 @@ async def process_answer(session_id: str, answer: str) -> dict:
         "evaluation": evaluation,
         "fingerprint": fingerprint,
         "difficulty": new_difficulty,
-        "guidance": guidance_data.get("guidance", ""),
+        "guidance": "",
         "next_question": next_question if not completed else "",
         "performance_trend": performance_trend,
         "completed": completed,
