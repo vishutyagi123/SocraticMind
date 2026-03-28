@@ -11,3 +11,4 @@ webrtcvad-wheels
 scipy
 soundfile
 audio-recorder-streamlit
+pypdf

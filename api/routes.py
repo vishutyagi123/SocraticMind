@@ -1,12 +1,11 @@
 """API routes — voice interview, STT, TTS, mentor mode."""
 import os
-import io
 import tempfile
 
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services.orchestrator import (
@@ -40,6 +39,51 @@ async def _write_upload_to_temp(upload: UploadFile) -> str:
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await upload.read())
         return tmp.name
+
+
+async def _extract_text_from_upload(upload: UploadFile) -> str:
+    """Best-effort text extraction for JD/topic files (PDF/TXT/DOCX fallback)."""
+    data = await upload.read()
+    if not data:
+        return ""
+
+    filename = (upload.filename or "").lower()
+    ext = os.path.splitext(filename)[1]
+
+    # Plain text first
+    if ext in (".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".jsx"):
+        try:
+            return data.decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    # PDF extraction (if pypdf is present). Fallback to lossy decode.
+    if ext == ".pdf":
+        try:
+            from pypdf import PdfReader  # type: ignore
+            import io
+
+            reader = PdfReader(io.BytesIO(data))
+            pages = [p.extract_text() or "" for p in reader.pages[:15]]
+            text = "\n".join(pages).strip()
+            if text:
+                return text
+        except Exception:
+            pass
+
+    # DOCX extraction (if python-docx is present).
+    if ext == ".docx":
+        try:
+            import io
+            import docx  # type: ignore
+
+            document = docx.Document(io.BytesIO(data))
+            return "\n".join(p.text for p in document.paragraphs).strip()
+        except Exception:
+            pass
+
+    # Last-resort decode from binary stream.
+    return data.decode("utf-8", errors="ignore")
 
 
 # ─────────────────────────────────────────────
@@ -96,6 +140,21 @@ async def start(req: StartRequest):
     else:
         return {"error": "Provide either domain or jd_text"}
     return result
+
+
+@router.post("/jd/extract")
+async def extract_jd(file: UploadFile = File(...)):
+    """Extract text from uploaded JD/topic file so interview can start reliably."""
+    text = (await _extract_text_from_upload(file)).strip()
+    if not text:
+        return {"error": "Could not extract readable text from uploaded file"}
+
+    # keep payload bounded for prompt costs / UX
+    return {
+        "filename": file.filename or "",
+        "text": text[:10000],
+        "char_count": len(text),
+    }
 
 
 @router.post("/answer")

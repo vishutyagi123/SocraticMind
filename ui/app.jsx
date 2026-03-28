@@ -315,15 +315,18 @@ function SetupScreen({ onStart }) {
     const file = e.target.files[0];
     if (!file) return;
     setUploadNote("Parsing PDF...");
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = new TextDecoder().decode(ev.target.result).replace(/[^\x20-\x7E\n]/g," ");
-      parseJD(text.slice(0,3000));
-      setTab("paste");
-      setUploadNote("PDF uploaded. Review/edit text and start interview.");
-    };
-    reader.onerror = () => setUploadNote("Could not parse this PDF. Try pasting JD text directly.");
-    reader.readAsArrayBuffer(file);
+    const form = new FormData();
+    form.append("file", file);
+
+    callApi("post", "/jd/extract", form, true).then((resp) => {
+      if (resp?.text) {
+        parseJD(resp.text.slice(0, 5000));
+        setTab("paste");
+        setUploadNote(`PDF uploaded (${Math.min(resp.char_count || 0, 5000)} chars extracted). You can now start.`);
+        return;
+      }
+      setUploadNote("Could not parse this PDF. Try pasting JD text directly.");
+    });
   };
 
   const canStart = Boolean(selectedTopic || parsedTopics.length > 0 || jdText.trim().length >= 40);
@@ -365,7 +368,7 @@ function SetupScreen({ onStart }) {
           <div onClick={() => document.getElementById("pdf-input").click()} style={{ width:"100%",minHeight:100,border:"1.5px dashed var(--border2)",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",padding:20,transition:"all .2s" }} onMouseOver={e => { e.currentTarget.style.borderColor="var(--accent)"; e.currentTarget.style.background="rgba(124,111,247,.04)"; }} onMouseOut={e => { e.currentTarget.style.borderColor="var(--border2)"; e.currentTarget.style.background="transparent"; }}>
             <div style={{ fontSize:24 }}>📄</div>
             <div style={{ fontSize:13,color:"var(--muted)" }}>Click to upload JD PDF</div>
-            <div style={{ fontSize:11,color:"var(--muted)",opacity:.6 }}>PDF parsing runs in-browser — no upload to server</div>
+            <div style={{ fontSize:11,color:"var(--muted)",opacity:.6 }}>PDF parsing uses backend extractor for better reliability</div>
             <input id="pdf-input" type="file" accept=".pdf" style={{ display:"none" }} onChange={handlePDF}/>
           </div>
         )}
